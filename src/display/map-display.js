@@ -6,6 +6,7 @@ var currentMapType
 var mapSources
 var mapSourceIDs
 var currentCustomMapSource
+var currentCompareMapSource
 
 var mapRegionIDToName
 
@@ -178,10 +179,10 @@ async function reloadForNewMapCountry(initialLoad)
   mapTypes = currentMapCountry.getMapTypes()
   mapTypeIDs = currentMapCountry.getMapTypeIDs()
   
-  let { parties, dropdownIDs, mainIDs, majorThirdPartyCandidates } = currentMapCountry.getPoliticalPartyData()
+  let { parties, dropdownIDs, mainIDs, majorThirdPartyCandidateIDs } = currentMapCountry.getPoliticalPartyData()
   politicalParties = parties
   mainPoliticalPartyIDs = mainIDs
-  majorThirdPartyCandidates = majorThirdPartyCandidates
+  majorThirdPartyCandidates = majorThirdPartyCandidateIDs
   
   dropdownPoliticalPartyIDs = defaultDropdownPoliticalPartyIDs = dropdownIDs
   createPartyDropdowns()
@@ -207,6 +208,7 @@ async function reloadForNewMapType(initialLoad)
   mapSources = currentMapType.getMapSources()
   mapSourceIDs = currentMapType.getMapSourceIDs()
   currentCustomMapSource = currentMapType.getCustomMapSource()
+  currentCompareMapSource = currentMapType.getCompareMapSource()
   mapRegionIDToName = currentMapType.getRegionIDToName()
 
   if (currentMapType.getCustomMapEnabled())
@@ -916,7 +918,7 @@ async function displayDataMap(dateIndex, reloadPartyDropdowns, fadeForNewSVG)
 
   var shouldReloadSVG = false
   var currentSVGPath = currentMapType.getSVGPath()
-  var newOverrideSVGPath = await currentMapSource.getOverrideSVGPath(showingCompareMap && currentMapSource.isCustom() ? currentCompareSliderDate : dateToDisplay)
+  var newOverrideSVGPath = await currentMapSource.getOverrideSVGPath(showingCompareMap && currentMapSource.isCompare() ? currentCompareSliderDate : dateToDisplay)
 
   if (newOverrideSVGPath != null && JSON.stringify(currentSVGPath) != JSON.stringify(newOverrideSVGPath))
   {
@@ -1012,6 +1014,9 @@ async function displayDataMap(dateIndex, reloadPartyDropdowns, fadeForNewSVG)
     regionData.state = currentMapDataForDate[regionNum].state
     regionData.margin = currentMapDataForDate[regionNum].margin
     regionData.partyID = currentMapDataForDate[regionNum].partyID
+    regionData.isHold = currentMapDataForDate[regionNum].isHold
+    regionData.electionDate = currentMapDataForDate[regionNum].electionDate
+    regionData.offYear = currentMapDataForDate[regionNum].offYear
     regionData.disabled = currentMapDataForDate[regionNum].disabled
     regionData.candidateName = currentMapDataForDate[regionNum].candidateName
     regionData.candidateMap = currentMapDataForDate[regionNum].candidateMap
@@ -1019,6 +1024,7 @@ async function displayDataMap(dateIndex, reloadPartyDropdowns, fadeForNewSVG)
     regionData.chanceChallenger = currentMapDataForDate[regionNum].chanceChallenger
     regionData.partyVotesharePercentages = currentMapDataForDate[regionNum].partyVotesharePercentages
     regionData.seatClass = currentMapDataForDate[regionNum].seatClass
+    regionData.isSpecial = currentMapDataForDate[regionNum].isSpecial
     regionData.flip = currentMapDataForDate[regionNum].flip
     regionData.voteSplits = currentMapDataForDate[regionNum].voteSplits
     regionData.voteWorth = currentMapDataForDate[regionNum].voteWorth
@@ -1051,6 +1057,8 @@ async function displayDataMap(dateIndex, reloadPartyDropdowns, fadeForNewSVG)
   {
     updateRegionBox()
   }
+  
+  updateShiftDropdownVisibility()
 
   if (currentViewingState == ViewingState.zooming)
   {
@@ -1128,15 +1136,15 @@ function updateNavBarForNewSource(revertToDefault, resetViewingState)
     $("#" + currentMapSource.getID().replace(/\s/g, '')).addClass("active")
   }
 
-  if (currentEditingState == EditingState.editing && currentMapSource.isCustom())
+  if (currentEditingState == EditingState.editing && currentMapSource.isCustom() && !currentMapSource.isCompare())
   {
     $("#editDoneButton .topnav-text").html("Done")
   }
-  else if (currentEditingState == EditingState.editing && !currentMapSource.isCustom())
+  else if (currentEditingState == EditingState.editing && !currentMapSource.isCustom() && !currentMapSource.isCompare())
   {
     toggleEditing(EditingState.viewing)
   }
-  else if (currentEditingState != EditingState.editing && currentMapSource.isCustom())
+  else if (currentEditingState != EditingState.editing && currentMapSource.isCustom() && !currentMapSource.isCompare())
   {
     $("#editDoneButton .topnav-text").html("Edit")
     $("#copyDropdownContainer").hide()
@@ -1146,14 +1154,19 @@ function updateNavBarForNewSource(revertToDefault, resetViewingState)
     $("#editDoneButton .topnav-text").html("Copy")
     $("#copyDropdownContainer").show()
   }
+  
+  if (currentMapType.getCustomMapEnabled())
+  {
+    $("#editDoneButton").removeClass('topnavdisable')
+  }
 
   updatePartyDropdownVisibility()
 
-  if (showingCompareMap && !currentMapSource.isCustom())
+  if (showingCompareMap && !currentMapSource.isCompare())
   {
     updateCompareMapSlidersVisibility(false)
   }
-  else if (showingCompareMap && currentMapSource.isCustom())
+  else if (showingCompareMap && currentMapSource.isCompare())
   {
     updateCompareMapSlidersVisibility(true)
   }
@@ -1165,7 +1178,7 @@ function updateNavBarForNewSource(revertToDefault, resetViewingState)
   }
 }
 
-function clearMap(fullClear, shouldResetCurrentMapSource)
+async function clearMap(fullClear, shouldResetCurrentMapSource)
 {
   fullClear = fullClear == null ? false : fullClear
   shouldResetCurrentMapSource = shouldResetCurrentMapSource != null ? shouldResetCurrentMapSource : true
@@ -1185,7 +1198,7 @@ function clearMap(fullClear, shouldResetCurrentMapSource)
       currentViewingState = ViewingState.viewing
       currentMapZoomRegion = null
       currentMapType.resetOverrideSVGPath()
-      loadMapSVGFile()
+      await loadMapSVGFile()
     }
 
     currentSliderDate = null
@@ -1195,14 +1208,18 @@ function clearMap(fullClear, shouldResetCurrentMapSource)
       currentCustomMapSource.clearMapData(true)
     }
   }
-  else
+  else if (currentMapSource.isCustom())
   {
-    currentCustomMapSource.clearMapData()
-    loadDataMap(false, true)
+    currentMapSource.clearMapData()
+    await loadDataMap(false, true)
   }
+  
+  let sourceToSet = null 
 
   if (showingCompareMap)
   {
+    sourceToSet = compareMapSourceIDArray[0] ? mapSources[compareMapSourceIDArray[0]] : null
+    
     resetCompareVariables()
     
     $(".comparesourcecheckbox").prop('checked', false)
@@ -1217,7 +1234,7 @@ function clearMap(fullClear, shouldResetCurrentMapSource)
     
     if (currentViewingState == ViewingState.zooming)
     {
-      zoomOutMap(false)
+      await zoomOutMap(false)
     }
   }
 
@@ -1256,6 +1273,8 @@ function clearMap(fullClear, shouldResetCurrentMapSource)
   $("#totalsPieChart").css("background-image", "")
 
   showingDataMap = false
+  
+  sourceToSet && await setMapSource(sourceToSet)
 }
 
 function toggleHelpBox()
@@ -1327,7 +1346,10 @@ function populateRegionsArray()
     displayRegionDataArray[regionID] = {partyID: TossupParty.getID(), margin: 0}
   })
 
-  displayRegionDataArray[nationalPopularVoteID] = {partyID: TossupParty.getID(), margin: 0}
+  if (currentViewingState != ViewingState.zooming)
+  {
+    displayRegionDataArray[nationalPopularVoteID] = {partyID: TossupParty.getID(), margin: 0}
+  }
 }
 
 async function toggleEditing(stateToSet)
@@ -1391,14 +1413,13 @@ async function toggleEditing(stateToSet)
     $("#marginsDropdownContainer").hide()
 
     $("#shiftContainer").show()
-    $("#shiftButton").removeClass('topnavdisable')
-    $("#shiftDropdownContainer").show()
+    updateShiftDropdownVisibility()
 
     $("#fillDropdownContainer").css('display', "block")
 
     $("#regionboxcontainer").css('pointer-events', "")
 
-    var currentMapIsCustom = (currentMapSource.isCustom())
+    var currentMapIsCustom = currentMapSource.isCustom() && !currentMapSource.isCompare()
     var currentMapDataForDate = currentSliderDate ? currentMapSource.getMapData()[currentSliderDate.getTime()] : displayRegionDataArray
     currentCustomMapSource.updateMapData(currentMapDataForDate, getCurrentDateOrToday(), !currentMapIsCustom, currentMapSource.getCandidateNames(getCurrentDateOrToday()), !currentMapIsCustom ? currentEditingMode : null)
 
@@ -1465,6 +1486,20 @@ async function toggleEditing(stateToSet)
   updatePartyDropdownVisibility()
 }
 
+function updateShiftDropdownVisibility()
+{
+  if (currentEditingState == EditingState.editing && viewingDiscreteRegions())
+  {
+    $("#shiftButton").removeClass('topnavdisable')
+    $("#shiftDropdownContainer").show()
+  }
+  else
+  {
+    $("#shiftButton").addClass('topnavdisable')
+    $("#shiftDropdownContainer").hide()
+  }
+}
+
 async function zoomOutMap(displayMap = true)
 {
   currentViewingState = ViewingState.viewing
@@ -1474,7 +1509,7 @@ async function zoomOutMap(displayMap = true)
   {
     compareResultCustomMapSource = null
     getCompareMajorParties = null
-    shouldSetCompareMapSource = currentMapSource.isCustom()
+    shouldSetCompareMapSource = currentMapSource.isCompare()
     
     await updateCompareMapSources([true, true], true, false, [$("#firstCompareDataMapDateSlider").val(), $("#secondCompareDataMapDateSlider").val()])
     shouldSetCompareMapSource = true
@@ -1592,15 +1627,19 @@ async function updateRegionFillColors(regionIDsToUpdate, regionData, shouldUpdat
   }
   else
   {
-    var marginIndex = getMarginIndexForValue(regionData.margin, regionData.partyID)
+    var marginIndex = getMarginIndexForValue(regionData.margin, regionData)
     fillColor = politicalParties[regionData.partyID].getMarginColors()[marginIndex]
   }
+  
+  if (fillColor == null) { return }
 
   if (!isDisabledOrTossup && currentMapType.getMapSettingValue("flipStates") && regionData.flip && !(canUseVoteSplitsForColor && currentViewingState == ViewingState.splitVote))
   {
     var patternID = generateFlipPattern(fillColor)
     fillColor = "url(#" + patternID + ")"
   }
+  
+  const mapCurrentSeatsSetting = currentMapType.getMapSettingValue("mapCurrentSeats")
 
   for (var regionIDNum in regionIDsToUpdate)
   {
@@ -1610,7 +1649,7 @@ async function updateRegionFillColors(regionIDsToUpdate, regionData, shouldUpdat
 
     regionDiv.css('display', shouldHide ? 'none' : 'inherit')
 
-    if (regionData.disabled == true && (!currentMapSource.isCustom() || currentMapType.getMapSettingValue("mapCurrentSeats") === false))
+    if (regionData.disabled == true && (!currentMapSource.isCustom() || mapCurrentSeatsSetting === false) && !(mapCurrentSeatsSetting === true && regionData.isHold))
     {
       regionDiv.css('pointer-events', 'none')
     }
@@ -1622,7 +1661,7 @@ async function updateRegionFillColors(regionIDsToUpdate, regionData, shouldUpdat
 
   for (let regionID of regionIDsToUpdate)
   {
-    $("#" + regionID + "-text").css('fill', regionData.disabled && !currentMapType.getMapSettingValue("mapCurrentSeats") ? 'gray' : 'white')
+    $("#" + regionID + "-text").css('fill', regionData.disabled ? 'gray' : 'white')
   }
 
   if (shouldUpdatePieChart == null || shouldUpdatePieChart == true)
@@ -1631,9 +1670,9 @@ async function updateRegionFillColors(regionIDsToUpdate, regionData, shouldUpdat
   }
 }
 
-function getMarginIndexForValue(margin)
+function getMarginIndexForValue(margin, regionData)
 {
-  if (margin == 101)
+  if (regionData.isHold || (regionData.disabled && regionData.partyID != TossupParty.getID()))
   {
     return "current"
   }
@@ -1796,7 +1835,7 @@ function getPopularVotePartyVoteshareData(regionDataArray, enforceNationalPopula
 function getCurrentDecade()
 {
   var dateForDecade
-  if (currentMapSource.isCustom() && showingCompareMap)
+  if (currentMapSource.isCompare() && showingCompareMap)
   {
     var compareDate = mapSources[compareMapSourceIDArray[0]].getMapDates()[$("#firstCompareDataMapDateSlider")[0].value-1]
     if (compareDate != null)
@@ -1818,7 +1857,7 @@ function getCurrentDecade()
 function getCurrentDateOrToday()
 {
   var dateToUse = new Date(getTodayString("/", false, "mdy")).getTime()
-  if (currentSliderDate)
+  if (currentSliderDate && !(showingCompareMap && currentMapSource.isCompare()))
   {
     dateToUse = currentSliderDate.getTime()
   }

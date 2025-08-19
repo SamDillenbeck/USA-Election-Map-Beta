@@ -81,7 +81,7 @@ function arrowKeyCycle(keyString)
     incrementSlider(keyString)
     var mapDatesLength = currentMapSource.getMapDates().length
 
-    if (showingCompareMap && currentMapSource.isCustom())
+    if (showingCompareMap && currentMapSource.isCompare())
     {
       switch (selectedCompareSlider)
       {
@@ -107,7 +107,7 @@ function incrementSlider(keyString)
 {
   var sliderDiv = $("#dataMapDateSlider")[0]
 
-  if (showingCompareMap && currentMapSource.isCustom())
+  if (showingCompareMap && currentMapSource.isCompare())
   {
     switch (selectedCompareSlider)
     {
@@ -144,7 +144,7 @@ function incrementSlider(keyString)
     break
 
     case "down":
-    if (showingCompareMap && currentMapSource.isCustom())
+    if (showingCompareMap && currentMapSource.isCompare())
     {
       switch (selectedCompareSlider)
       {
@@ -218,7 +218,7 @@ function incrementSlider(keyString)
     break
   }
 
-  if (showingCompareMap && currentMapSource.isCustom())
+  if (showingCompareMap && currentMapSource.isCompare())
   {
     switch (selectedCompareSlider)
     {
@@ -423,7 +423,7 @@ document.addEventListener('keypress', async function(e) {
   else if (shiftNumberKeycodes.includes(e.key) && shiftNumberKeycodes.indexOf(e.key) < mapSourceIDs.length-1 && !isEditingTextbox())
   {
     var mapSourceIDToCompare = mapSourceIDs[shiftNumberKeycodes.indexOf(e.key)]
-    toggleCompareMapSourceCheckbox(mapSourceIDToCompare, false)
+    addCompareMapSource(mapSourceIDToCompare)
   }
   else if ((e.key == "c" || e.key == "m" || e.key == "s") && !isEditingTextbox())
   {
@@ -693,7 +693,6 @@ async function leftClickRegion(div)
     {
       regionData.partyID = (selectedParty || TossupParty).getID()
       regionData.candidateName = regionData.candidateMap ? regionData.candidateMap[regionData.partyID] : null
-      regionData.margin = 101
     }
     else if (selectedParty != null && regionData.partyID != selectedParty.getID())
     {
@@ -796,7 +795,6 @@ function rightClickRegion(div)
     {
       regionData.partyID = (selectedParty || TossupParty).getID()
       regionData.candidateName = regionData.candidateMap ? regionData.candidateMap[regionData.partyID] : null
-      regionData.margin = 101
     }
     else if (selectedParty != null && regionData.partyID != selectedParty.getID())
     {
@@ -913,12 +911,12 @@ function altShiftClickRegion(div)
     if (regionData.disabled)
     {
       regionData.disabled = false
-      regionData.margin = regionData.partyID == TossupParty.getID() ? 0 : 100
+      regionData.isHold = false
     }
     else
     {
       regionData.disabled = true
-      regionData.margin = regionData.partyID == TossupParty.getID() ? 0 : 101
+      regionData.isHold = true
     }
 
     updateRegionFillColors(regionIDsToFill, regionData)
